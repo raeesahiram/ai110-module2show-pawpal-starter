@@ -18,22 +18,49 @@ class Task:
     completed: bool = False
 
     def mark_completed(self) -> None:
-        raise NotImplementedError
+        """Mark this task as completed."""
+        self.completed = True
 
     def mark_pending(self) -> None:
-        raise NotImplementedError
+        """Mark this task as pending/uncompleted."""
+        self.completed = False
 
     def update_duration(self, minutes: int) -> None:
-        raise NotImplementedError
+        """Update the task duration, raising on negative values."""
+        if minutes < 0:
+            raise ValueError("Task duration must be non-negative")
+        self.duration_minutes = minutes
 
     def update_priority(self, priority: int) -> None:
-        raise NotImplementedError
+        """Update the task priority with range validation."""
+        if not 1 <= priority <= 5:
+            raise ValueError("Priority must be between 1 and 5")
+        self.priority = priority
 
     def should_run_today(self, target_date: date) -> bool:
-        raise NotImplementedError
+        """Determine whether the task should run on a target date."""
+        if self.completed:
+            return False
+        if self.due_time is not None and self.due_time.date() != target_date:
+            return False
+        if self.is_recurring:
+            return True
+        return self.due_time is None or self.due_time.date() == target_date
 
     def to_dict(self) -> dict:
-        raise NotImplementedError
+        """Serialize the task to a dictionary."""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "duration_minutes": self.duration_minutes,
+            "priority": self.priority,
+            "is_recurring": self.is_recurring,
+            "recurrence_rule": self.recurrence_rule,
+            "due_time": self.due_time.isoformat() if self.due_time else None,
+            "category": self.category,
+            "completed": self.completed,
+        }
 
 
 @dataclass
@@ -47,16 +74,22 @@ class Pet:
     tasks: List[Task] = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
-        raise NotImplementedError
+        """Add a task to this pet."""
+        self.tasks.append(task)
 
     def remove_task(self, task_id: str) -> None:
-        raise NotImplementedError
+        """Remove task from this pet by ID."""
+        self.tasks = [task for task in self.tasks if task.id != task_id]
 
     def get_tasks(self) -> List[Task]:
-        raise NotImplementedError
+        """Return the list of tasks for this pet."""
+        return self.tasks
 
     def update_profile(self, **kwargs) -> None:
-        raise NotImplementedError
+        """Update profile attributes for this pet."""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
 
 
 class Owner:
@@ -74,16 +107,22 @@ class Owner:
         self.pets: List[Pet] = []
 
     def add_pet(self, pet: Pet) -> None:
-        raise NotImplementedError
+        """Add a pet to the owner's list."""
+        self.pets.append(pet)
 
     def remove_pet(self, pet_name: str) -> None:
-        raise NotImplementedError
+        """Remove a pet by name from the owner's list."""
+        self.pets = [pet for pet in self.pets if pet.name != pet_name]
 
     def get_pets(self) -> List[Pet]:
-        raise NotImplementedError
+        """Return the list of pets owned by this owner."""
+        return self.pets
 
     def update_availability(self, minutes: int) -> None:
-        raise NotImplementedError
+        """Update daily available minutes for scheduling."""
+        if minutes < 0:
+            raise ValueError("Availability minutes must be non-negative")
+        self.available_minutes_per_day = minutes
 
 
 class Scheduler:
@@ -94,22 +133,88 @@ class Scheduler:
         self.total_scheduled_minutes: int = 0
 
     def collect_candidate_tasks(self, target_date: date) -> List[Task]:
-        raise NotImplementedError
+        """Collect tasks from all pets that are eligible for the target date."""
+        candidates: List[Task] = []
+        for pet in self.owner.pets:
+            for task in pet.tasks:
+                if task.should_run_today(target_date):
+                    candidates.append(task)
+        return candidates
 
     def sort_tasks_by_priority_due(self, tasks: List[Task]) -> List[Task]:
-        raise NotImplementedError
+        """Sort tasks by priority first, due date second, and duration third."""
+        return sorted(
+            tasks,
+            key=lambda task: (
+                -task.priority,
+                task.due_time or datetime.max,
+                task.duration_minutes,
+            ),
+        )
 
     def fit_tasks_by_availability(self, tasks: List[Task]) -> List[Task]:
-        raise NotImplementedError
+        """Greedily fit tasks into owner availability, preserving order."""
+        available = self.owner.available_minutes_per_day
+        schedule: List[Task] = []
+
+        for task in tasks:
+            if task.duration_minutes <= 0:
+                continue
+            if task.duration_minutes <= available:
+                schedule.append(task)
+                available -= task.duration_minutes
+
+        self.total_scheduled_minutes = self.owner.available_minutes_per_day - available
+        return schedule
 
     def generate_daily_plan(self, target_date: date) -> None:
-        raise NotImplementedError
+        """Generate a daily task plan for the target date."""
+        self.schedule_date = target_date
+        candidate_tasks = self.collect_candidate_tasks(target_date)
+        ordered_tasks = self.sort_tasks_by_priority_due(candidate_tasks)
+        self.scheduled_tasks = self.fit_tasks_by_availability(ordered_tasks)
 
     def get_schedule(self) -> List[Task]:
-        raise NotImplementedError
+        """Return the generated schedule tasks."""
+        return self.scheduled_tasks
 
     def explain_plan(self) -> str:
-        raise NotImplementedError
+        """Provide a human-readable explanation of the generated plan."""
+        if not self.schedule_date:
+            return "No schedule generated yet."
+
+        lines = [f"Schedule for {self.schedule_date.isoformat()}:" ]
+        for task in self.scheduled_tasks:
+            lines.append(
+                f"- {task.title} ({task.duration_minutes} minutes, priority {task.priority})"
+            )
+
+        slack = self.owner.available_minutes_per_day - self.total_scheduled_minutes
+        lines.append(f"Total scheduled minutes: {self.total_scheduled_minutes}")
+        lines.append(f"Remaining available minutes: {slack}")
+
+        conflicts = self.detect_conflicts(self.scheduled_tasks)
+        if conflicts:
+            lines.append("Conflicts:")
+            lines.extend([f"- {c}" for c in conflicts])
+
+        return "\n".join(lines)
 
     def detect_conflicts(self, tasks: List[Task]) -> List[str]:
-        raise NotImplementedError
+        """Detect conflicts in the current schedule and return descriptions."""
+        conflicts: List[str] = []
+        if self.total_scheduled_minutes > self.owner.available_minutes_per_day:
+            conflicts.append("Scheduled workload exceeds available minutes.")
+
+        task_ids = [task.id for task in tasks]
+        if len(task_ids) != len(set(task_ids)):
+            conflicts.append("Duplicate task IDs in schedule.")
+
+        too_long = [task for task in tasks if task.duration_minutes > self.owner.available_minutes_per_day]
+        for task in too_long:
+            conflicts.append(
+                f"Task '{task.title}' duration ({task.duration_minutes}) exceeds total daily availability ({self.owner.available_minutes_per_day})."
+            )
+
+        return conflicts
+

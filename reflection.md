@@ -8,12 +8,27 @@
 **a. Initial design**
 
 - Briefly describe your initial UML design.
+1. The initial UML design uses four core classes in a straightforward domain model. Owner holds the user’s identity, timezone, daily available minutes, and a list of pets, and it manages high-level ownership state. Pet encapsulates a single animal’s profile data plus a task list and the ability to manage that list. Task captures a specific care action with duration, priority, scheduling rules, due date, and completion state, and it includes methods to update status and decide whether it should run on a given day. Scheduler is responsible for taking an owner’s pets and tasks, selecting candidate tasks for a date, ordering them by priority/due constraints, fitting them into availability, producing the daily plan, and explaining conflicts or decisions.
+
 - What classes did you include, and what responsibilities did you assign to each?
+1. Owner - Responsibility: model the pet owner and global daily constraints
+2. Pet - Responsibility: represent a single pet with its profile and task list
+3. Task (dataclass) - Responsibility: represent one care activity with schedule metadata and completion state
+4. Scheduler - Responsibility: build/maintain a daily task plan for owner/pets under constraints
+
 
 **b. Design changes**
 
 - Did your design change during implementation?
+1. The Scheduler class was updated to include a real conflict detection method instead of leaving it as a placeholder.
+- detect_conflicts(self, tasks: List[Task]) now checks:
+- - if total scheduled minutes exceed owner’s daily availability,
+- - if there are duplicate task IDs,
+- - if any single task duration exceeds the owner’s entire daily window.
+- explain_plan now calls detect_conflicts, and appends conflicts to the human-readable schedule summary including total minutes and remaining slack.
+
 - If yes, describe at least one change and why you made it.
+1. This was introduced because the earlier design had a functional gap: the pipeline could schedule tasks but not flag impossible or inconsistent states. Detecting oversubscription guards against generating plans that exceed user constraints. Duplicate ID detection guards against corrupted task sets and helps diagnose data integrity problems. Single-task duration checks help surface unschedulable task definitions early (instead of silently dropping them or producing confusing results). In practical terms, separating conflict checks means the scheduler can now report “why” a given plan is invalid, which supports reliable behavior, debugging, and user transparency.
 
 ---
 
