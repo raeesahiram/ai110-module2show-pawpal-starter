@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, time
 from typing import List, Optional
 
 
@@ -17,9 +17,42 @@ class Task:
     category: Optional[str] = None
     completed: bool = False
 
-    def mark_completed(self) -> None:
-        """Mark this task as completed."""
+    def mark_completed(self) -> Optional[Task]:
+        """Mark this task as completed.
+
+        For recurring tasks (daily/weekly), return a new task instance for the next occurrence.
+        """
         self.completed = True
+
+        if not self.is_recurring or not self.recurrence_rule:
+            return None
+
+        rule = self.recurrence_rule.lower().strip()
+        if rule not in ("daily", "weekly"):
+            return None
+
+        # derive the base due_time for recurrence; default to today at midnight if absent
+        current_due = self.due_time or datetime.combine(date.today(), datetime.min.time())
+
+        if rule == "daily":
+            next_due = current_due + timedelta(days=1)
+        else:
+            next_due = current_due + timedelta(weeks=1)
+
+        next_task = Task(
+            id=f"{self.id}-next-{next_due.date().isoformat()}",
+            title=self.title,
+            description=self.description,
+            duration_minutes=self.duration_minutes,
+            priority=self.priority,
+            is_recurring=self.is_recurring,
+            recurrence_rule=self.recurrence_rule,
+            due_time=next_due,
+            category=self.category,
+            completed=False,
+        )
+
+        return next_task
 
     def mark_pending(self) -> None:
         """Mark this task as pending/uncompleted."""
@@ -118,6 +151,18 @@ class Owner:
         """Return the list of pets owned by this owner."""
         return self.pets
 
+    def get_tasks(self, completed: Optional[bool] = None, pet_name: Optional[str] = None) -> List[Task]:
+        """Return tasks filtered by completion status and/or pet name."""
+        tasks: List[Task] = []
+        for pet in self.pets:
+            if pet_name is not None and pet.name != pet_name:
+                continue
+            for task in pet.tasks:
+                if completed is not None and task.completed != completed:
+                    continue
+                tasks.append(task)
+        return tasks
+
     def update_availability(self, minutes: int) -> None:
         """Update daily available minutes for scheduling."""
         if minutes < 0:
@@ -133,7 +178,11 @@ class Scheduler:
         self.total_scheduled_minutes: int = 0
 
     def collect_candidate_tasks(self, target_date: date) -> List[Task]:
-        """Collect tasks from all pets that are eligible for the target date."""
+        """Collect tasks from all pets that are eligible for the target date.
+
+        This is a lightweight selection algorithm that checks task completion status,
+        due date and recurrence to build the candidate pool.
+        """
         candidates: List[Task] = []
         for pet in self.owner.pets:
             for task in pet.tasks:
@@ -142,7 +191,10 @@ class Scheduler:
         return candidates
 
     def sort_tasks_by_priority_due(self, tasks: List[Task]) -> List[Task]:
-        """Sort tasks by priority first, due date second, and duration third."""
+        """Sort tasks by priority first, due date second, and duration third.
+
+        This method provides a deterministic ordering for greedy schedule fitting.
+        """
         return sorted(
             tasks,
             key=lambda task: (
@@ -153,7 +205,12 @@ class Scheduler:
         )
 
     def fit_tasks_by_availability(self, tasks: List[Task]) -> List[Task]:
-        """Greedily fit tasks into owner availability, preserving order."""
+        """Greedily fit tasks into owner availability, preserving order.
+
+        The algorithm is O(n), selecting tasks in provided order and truncating at
+        availability limits. This is a simple and transparent strategy for users,
+        but it does not guarantee an optimal total priority solution.
+        """
         available = self.owner.available_minutes_per_day
         schedule: List[Task] = []
 
@@ -201,20 +258,60 @@ class Scheduler:
         return "\n".join(lines)
 
     def detect_conflicts(self, tasks: List[Task]) -> List[str]:
-        """Detect conflicts in the current schedule and return descriptions."""
+        """Detect conflicts in the current schedule and return descriptions.
+
+        Conflict checks are non-fatal warnings.  This method performs an efficient
+        evaluation over:
+
+        - total availability budget
+        - duplicate task IDs
+        - task duration bounds
+        - timed task overlaps (same or overlapping minutes)
+
+        The result is a list of warning strings and the scheduler continues to use
+        the plan regardless.
+        """
         conflicts: List[str] = []
         if self.total_scheduled_minutes > self.owner.available_minutes_per_day:
-            conflicts.append("Scheduled workload exceeds available minutes.")
+            conflicts.append("WARNING: Scheduled workload exceeds available minutes.")
 
         task_ids = [task.id for task in tasks]
         if len(task_ids) != len(set(task_ids)):
-            conflicts.append("Duplicate task IDs in schedule.")
+            conflicts.append("WARNING: Duplicate task IDs in schedule.")
 
         too_long = [task for task in tasks if task.duration_minutes > self.owner.available_minutes_per_day]
         for task in too_long:
             conflicts.append(
-                f"Task '{task.title}' duration ({task.duration_minutes}) exceeds total daily availability ({self.owner.available_minutes_per_day})."
+                f"WARNING: Task '{task.title}' duration ({task.duration_minutes}) exceeds total daily availability ({self.owner.available_minutes_per_day})."
             )
+
+        # Detect overlapping scheduled-task time windows for tasks with defined due_time.
+        timed_tasks = [
+            task
+            for task in tasks
+            if task.due_time is not None and task.duration_minutes > 0
+        ]
+
+        timed_tasks.sort(key=lambda t: t.due_time)
+
+        for i in range(len(timed_tasks)):
+            current_task = timed_tasks[i]
+            current_start = current_task.due_time
+            current_end = current_start + timedelta(minutes=current_task.duration_minutes)
+
+            for j in range(i + 1, len(timed_tasks)):
+                next_task = timed_tasks[j]
+                next_start = next_task.due_time
+                next_end = next_start + timedelta(minutes=next_task.duration_minutes)
+
+                if next_start >= current_end:
+                    break
+
+                # Overlap found between current_task and next_task
+                conflicts.append(
+                    f"WARNING: Task '{current_task.title}' ({current_start.time()}-{current_end.time()})" \
+                    f" overlaps with '{next_task.title}' ({next_start.time()}-{next_end.time()})."
+                )
 
         return conflicts
 

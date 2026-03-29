@@ -41,3 +41,18 @@ pip install -r requirements.txt
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
+
+## Smarter Scheduling
+
+PawPal+ now includes enhanced scheduling features in `pawpal_system.py`:
+
+- Recurring task support: `Task.mark_completed()` auto-generates the next `daily` or `weekly` task occurrence using `timedelta`.
+- Filter tasks by `completed` and `pet_name` via `Owner.get_tasks(completed, pet_name)`.
+- Greedy daily plan generation with priority-based sorting and availability fit (`Scheduler.generate_daily_plan`).
+- Non-fatal conflict detection with warnings for:
+  - over-capacity workload,
+  - duplicate task IDs,
+  - per-task duration > daily availability,
+  - overlapping timed tasks (same or conflicting time ranges).
+- `scheduler.explain_plan()` includes conflicts as warning entries instead of crashing.
+
