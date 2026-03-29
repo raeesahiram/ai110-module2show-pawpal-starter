@@ -1,6 +1,9 @@
 # PawPal+ Project Reflection
 
 ## 1. System Design
+- 1. The user should be able to add and remove pets from their account.
+- 2. The user should be able to see their daily tasks on the home screen when they open the app.
+- 3. The user should be able to schedule walks on a calendar for the future.
 
 **a. Initial design**
 
