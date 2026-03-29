@@ -56,3 +56,22 @@ PawPal+ now includes enhanced scheduling features in `pawpal_system.py`:
   - overlapping timed tasks (same or conflicting time ranges).
 - `scheduler.explain_plan()` includes conflicts as warning entries instead of crashing.
 
+## Testing PawPal+
+
+Run tests with:
+
+```bash
+python -m pytest
+```
+
+Current test coverage focuses on:
+
+- sorting correctness (`Scheduler.sort_tasks_by_priority_due`) and chronological order behavior
+- recurrence logic (`Task.mark_completed`) for daily roll-forward tasks
+- conflict detection (`Scheduler.detect_conflicts`) for overlapping times and duplicate/residual constraints
+- base cases including no-pets and no-tasks
+
+### Confidence Level
+
+- ★★★★★ (5/5) based on the current suite passing all designed behaviors and edge-cases in local test runs.
+
