@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import date, datetime
 from pawpal_system import Owner, Pet, Task
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
@@ -106,6 +107,56 @@ if st.button("Generate schedule"):
     else:
         scheduler = Scheduler(owner)
         scheduler.generate_daily_plan(date.today())
+
+        # Display schedule summary
         st.write("### Today's Schedule")
+        st.success("Schedule generated successfully")
+
+        conflicts = scheduler.detect_conflicts(scheduler.scheduled_tasks)
+        if conflicts:
+            st.warning("Potential schedule conflicts detected. Please review the task timings below.")
+            for warning_text in conflicts:
+                st.warning(warning_text)
+
+        plan_table = [
+            {
+                "Task": task.title,
+                "Pet": next((pet.name for pet in owner.pets if task in pet.tasks), "Unknown"),
+                "Duration": task.duration_minutes,
+                "Priority": task.priority,
+                "Due": task.due_time.strftime("%H:%M") if task.due_time else "n/a",
+            }
+            for task in scheduler.get_schedule()
+        ]
+
+        if plan_table:
+            st.table(plan_table)
+        else:
+            st.info("No tasks fit the schedule for today.")
+
+        # Show pending tasks sorted by due time as additional view
+        pending = owner.get_tasks(completed=False)
+        sorted_pending = sorted(
+            pending,
+            key=lambda t: t.due_time if t.due_time is not None else datetime.max,
+        )
+        if sorted_pending:
+            st.write("### Pending tasks (sorted)")
+            st.table(
+                [
+                    {
+                        "Task": t.title,
+                        "Pet": next((pet.name for pet in owner.pets if t in pet.tasks), "Unknown"),
+                        "Due": t.due_time.strftime("%H:%M") if t.due_time else "n/a",
+                        "Priority": t.priority,
+                    }
+                    for t in sorted_pending
+                ]
+            )
+        else:
+            st.info("No pending tasks available.")
+
+        # Explain plan text for users who want details
+        st.write("### Detailed Plan Explanation")
         st.text(scheduler.explain_plan())
 

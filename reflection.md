@@ -37,12 +37,42 @@
 **a. Constraints and priorities**
 
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
+Time availability (Owner.available_minutes_per_day)
+total daily capacity is enforced by fit_tasks_by_availability
+excess workload is flagged in detect_conflicts
+Task duration
+tasks with duration_minutes <= 0 are skipped
+tasks with duration > daily capacity are flagged as unschedulable
+Priority
+sorted first in sort_tasks_by_priority_due so high-priority tasks are considered first
+Due date / schedule day
+Task.should_run_today checks due_time date and recurrence rule
+Recurrence
+Task.is_recurring + recurrence_rule influences eligibility
+mark_completed can create next-day/week instance
+Completion state
+completed tasks are excluded from today’s plan
+Conflict constraints
+duplicate task IDs
+time overlaps (same or conflicting windows) flagged as warnings
+
 - How did you decide which constraints mattered most?
+Start with the core user promise: “Produce a reliable daily plan that fits owner availability.”
+so time budget (available minutes, task duration) is primary
+Next, enforce meaning/value through priority
+schedule most impactful tasks first
+Add correctness safety checks (preferred by UI trust)
+detect duplicate IDs and impossible tasks, provide non-crash warnings
+Lastly, support real reuse via recurring tasks
+recurring tasks should continue automatically and not require re-entry each day
 
 **b. Tradeoffs**
 
 - Describe one tradeoff your scheduler makes.
+1. Current conflict detection primarily checks for tasks that start at the same time, which is simple and performant, but it sacrifices capturing partial overlaps.
 - Why is that tradeoff reasonable for this scenario?
+1. It is easy to reason about and fast (linear or near-linear complexity) but might miss more subtle overlaps (e.g., A: 10:00-10:30, B: 10:15-10:45) if not fully normalized. It also applies well to “slot-based” data but less to continuous flexible timing.
+
 
 ---
 
@@ -50,13 +80,11 @@
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+I used AI as an iterative coding partner for design, debugging, and refactoring. I asked for behaviors that matched requirements (sorting, recurrence, conflict warnings), then implemented and validated the suggestions. Prompting for concrete code examples plus tests was especially helpful because it made outputs directly usable. It also helped to keep architecture consistent between `pawpal_system.py` and `app.py`.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+One moment where I did not accept AI as-is was when a suggestion for an optimal knapsack-style scheduler appeared; I felt that was overkill for the project scope. Instead, I chose a deterministic greedy solution and wrote targeted tests to validate it. I used `pytest` assertions and manual Streamlit runs to verify correctness before accepting the final design.
 
 ---
 
@@ -64,13 +92,11 @@
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+I tested task sorting order, recurrence behavior, conflict detection, and edge cases like no pets/no tasks. These tests were important to ensure the app behaves predictably and that users can trust schedule output. Strong test coverage also made refactoring safer as I added features.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+I am confident (5/5) that the scheduler works for the current scope because all `pytest` tests pass and behavior matches the requirements. With more time, I would add temporal edge cases (cross-day recurrence, timezone effects, partial overlaps) and UI integration tests for the Streamlit workflow.
 
 ---
 
@@ -78,12 +104,12 @@
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The scheduler architecture and clear class responsibilities worked well; implementing recurring tasks plus conflict warnings was a big success. The integration with Streamlit UI also came together cleanly.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+Next iteration I’d improve the overlap detection to handle partial intervals exactly and introduce a slot-based time allocation model. I’d also add persistent state (database or local storage) so tasks survive reloads.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+I learned that a pragmatic algorithm with good tests and a non-crashing warning model is usually better than chasing perfect optimization early. Working with AI effectively means iterating and validating, not blindly accepting every suggestion.
